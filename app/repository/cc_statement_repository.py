@@ -1,9 +1,12 @@
-from google import genai
 import os
-import json
+
 import pdfplumber
 from dotenv import load_dotenv
-from model.statement import Transaction, StatementSummary, CreditCardStatement
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from model.statement import CreditCardStatement
 
 # Load environment variables from .env file
 load_dotenv()
@@ -12,7 +15,7 @@ load_dotenv()
 class CcStatementRepository(object):
     def __init__(self, api_key=None):
         """
-        Initialize LLM Repository with Gemini API.
+        Initialize Credit Card Statement Repository with Gemini API using LangChain.
 
         Args:
             api_key (str): Google API key. If not provided, will look for GOOGLE_API_KEY env variable
@@ -22,18 +25,27 @@ class CcStatementRepository(object):
             raise ValueError(
                 "Google API key is required. Set GOOGLE_API_KEY environment variable or pass api_key to constructor."
             )
-        self.client = genai.Client(api_key=self.api_key)
+
+        # Initialize LangChain LLM
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash-exp",
+            api_key=self.api_key,
+            temperature=0,  # Use deterministic output for structured data extraction
+        )
+
+        # Initialize output parser
+        self.parser = PydanticOutputParser(pydantic_object=CreditCardStatement)
 
     def retrieve_statement(self, file_path, password=None):
         """
-        Parse a PDF file and extract all text content.
+        Parse a PDF file and extract structured credit card statement data.
 
         Args:
             file_path (str): Path to the PDF file
             password (str, optional): Password for encrypted PDF files
 
         Returns:
-            str: Extracted text from the PDF
+            CreditCardStatement: Structured statement data
         """
         try:
             text = ""
@@ -58,133 +70,74 @@ class CcStatementRepository(object):
         Returns:
             CreditCardStatement: Structured data model containing summary and transactions
         """
-        prompt = f"""
-Analyze the following credit card statement text and extract structured information.
+        # Create prompt template
+        prompt = ChatPromptTemplate.from_template(
+            """Analyze the following credit card statement text and extract structured information.
 
 Statement Text:
-{statementText}
+{statement_text}
 
-Please extract and return the following information in JSON format:
-{{
-    "summary": {{
-        "card_number": <string or null>,
-        "credit_limit": <float or null>,
-        "outstanding_balance": <float>,
-        "minimum_payment": <float or null>,
-        "payment_due_date": <string in YYYY-MM-DD format or null>,
-        "statement_date": <string in YYYY-MM-DD format>,
-        "previous_balance": <float or null>,
-        "total_credits": <float or null>,
-        "total_debits": <float or null>
-    }},
-    "transactions": [
-        {{
-            "date": <string in YYYY-MM-DD format>,
-            "description": <string>,
-            "amount": <float>,
-            "transaction_type": <"debit" or "credit">,
-            "is_installment": <boolean>,
-            "installment_current": <integer or null>,
-            "installment_total": <integer or null>,
-            "installment_plan_amount": <float or null>
-        }}
-    ]
-}}
+{format_instructions}
 
-Instructions:
+CRITICAL INSTRUCTIONS - MUST FOLLOW EXACTLY:
+
 1. Extract all transactions with their dates, descriptions, and amounts
+
 2. Identify whether each transaction is a debit (purchase/charge) or credit (payment/refund)
-3. Detect installment transactions - look for patterns like "3/12", "installment 5 of 10", "EMI", "IPP", etc.
-4. For installment transactions:
-   - Set is_installment to true
-   - Extract installment_current (the current payment number, e.g., 3 from "3/12")
-   - Extract installment_total (total number of payments, e.g., 12 from "3/12")
-   - If available, extract installment_plan_amount (the total purchase amount being financed)
-5. For non-installment transactions, set is_installment to false and installment fields to null
+
+3. **INSTALLMENT DETECTION - VERY IMPORTANT**:
+   - Carefully examine EACH transaction description for installment patterns
+   - Common installment patterns to look for:
+     * "XX/YY" format (e.g., "09/10", "03/06", "10/10") - this is the MOST COMMON pattern
+     * "X of Y" format (e.g., "3 of 12", "installment 5 of 10")
+     * Keywords: "IPP", "EMI", "INST", "INSTALLMENT"
+   - The installment pattern is typically at the END of the description
+   - Example: "ZOOM CAMERA-WEST GATE 09/10" means installment 9 of 10
+   - Example: "2C2P *LAZADA 03/06" means installment 3 of 6
+
+4. For installment transactions (when you find XX/YY or similar patterns):
+   - **MUST** set is_installment to true
+   - **MUST** extract installment_current (the first number, e.g., 9 from "09/10")
+   - **MUST** extract installment_total (the second number, e.g., 10 from "09/10")
+   - If the total plan amount is shown separately, extract installment_plan_amount
+   - Otherwise, leave installment_plan_amount as null
+
+5. For non-installment transactions:
+   - Set is_installment to false
+   - Set installment_current to null
+   - Set installment_total to null
+   - Set installment_plan_amount to null
+
 6. Extract summary information like card number (last 4 digits or masked format), credit limit, outstanding balance, payment due date, etc.
+
 7. Convert all dates to YYYY-MM-DD format
-8. IMPORTANT - Year handling for transaction dates:
+
+8. Year handling for transaction dates:
    - If transaction dates in the PDF include the year, use that year
    - If transaction dates are missing the year (e.g., only "01/15" or "Jan 15"), infer the year from the statement_date
    - For transactions that occur in the statement period, use the same year as the statement date
    - For transactions near year-end: if the transaction month is December and statement month is January, the transaction year should be (statement year - 1)
    - For transactions near year-start: if the transaction month is January and statement month is December, the transaction year should be (statement year + 1)
+
 9. Ensure all amounts are positive numbers
+
 10. If a field is not found in the statement, use null
-11. Return ONLY the JSON object, no additional text or explanation
-"""
+
+REMINDER: DO NOT MISS ANY INSTALLMENT PATTERNS! Check every transaction description carefully for XX/YY patterns."""
+        )
 
         try:
-            response = self.client.models.generate_content(
-                model="gemini-2.0-flash-exp", contents=prompt
+            # Create the chain: prompt -> LLM -> parser
+            chain = prompt | self.llm | self.parser
+
+            statement = chain.invoke(
+                {
+                    "statement_text": statementText,
+                    "format_instructions": self.parser.get_format_instructions(),
+                }
             )
-            response_text = response.text.strip()
-
-            # Clean up the response text to extract JSON
-            cleaned_text = self._extract_json_from_response(response_text)
-
-            # Parse JSON response
-            data = json.loads(cleaned_text)
-
-            # Validate required fields
-            if "summary" not in data or "transactions" not in data:
-                raise ValueError(
-                    "Response missing required fields: 'summary' or 'transactions'"
-                )
-
-            # Create structured data model
-            summary = StatementSummary(**data["summary"])
-            transactions = [Transaction(**t) for t in data["transactions"]]
-            statement = CreditCardStatement(summary=summary, transactions=transactions)
 
             return statement
 
-        except json.JSONDecodeError as e:
-            # Log the problematic response for debugging
-            error_msg = f"Failed to parse LLM response as JSON: {str(e)}\n"
-            error_msg += f"Attempted to parse: {cleaned_text[:500]}..."
-            raise Exception(error_msg)
-        except KeyError as e:
-            raise Exception(f"Missing required field in LLM response: {str(e)}")
-        except TypeError as e:
-            raise Exception(f"Invalid data type in LLM response: {str(e)}")
         except Exception as e:
             raise Exception(f"Error processing statement with LLM: {str(e)}")
-
-    def _extract_json_from_response(self, response_text):
-        """
-        Extract JSON from LLM response, handling various formatting issues.
-
-        Args:
-            response_text (str): Raw response from LLM
-
-        Returns:
-            str: Cleaned JSON string
-        """
-        text = response_text.strip()
-
-        # Remove markdown code blocks
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-
-        if text.endswith("```"):
-            text = text[:-3]
-
-        text = text.strip()
-
-        # Try to find JSON object boundaries if text contains extra content
-        if not text.startswith("{"):
-            # Look for first occurrence of {
-            start_idx = text.find("{")
-            if start_idx != -1:
-                text = text[start_idx:]
-
-        if not text.endswith("}"):
-            # Look for last occurrence of }
-            end_idx = text.rfind("}")
-            if end_idx != -1:
-                text = text[: end_idx + 1]
-
-        return text

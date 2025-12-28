@@ -1,15 +1,14 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
 import os
 import tempfile
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from repository.cc_statement_repository import CcStatementRepository
-from repository.llm_repository import LlmRepository
 
 app = FastAPI(title="Credit Card Statement Parser API")
 
 # Initialize repositories
 cc_repo = CcStatementRepository()
-llm_repo = LlmRepository()
 
 
 @app.post("/api/parse-statement")
