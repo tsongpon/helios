@@ -30,14 +30,14 @@ curl -X POST http://localhost:8080/v1/statements/extract \
 
 ### Google AI Studio Integration
 
-**API Key:** AIzaSyCn1Oz6VMCkPK81amlF93F69JOInPorURs (configured)  
+**API Key:** (configured)  
 **Model:** gemini-2.0-flash-exp  
 **Framework:** LangChain4j v0.36.2
 
 Configuration in `application.yaml`:
 ```yaml
 gemini:
-  api-key: AIzaSyCn1Oz6VMCkPK81amlF93F69JOInPorURs
+  api-key: ${GEMINI_API_KEY}
   model-name: gemini-2.0-flash-exp
 ```
 

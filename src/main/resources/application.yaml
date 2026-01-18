@@ -7,5 +7,5 @@ spring:
       max-request-size: 10MB
 
 gemini:
-  api-key: ${GEMINI_API_KEY:AIzaSyCn1Oz6VMCkPK81amlF93F69JOInPorURs}
+  api-key: ${GEMINI_API_KEY}
   model-name: ${GEMINI_MODEL_NAME:gemini-2.0-flash-exp}
