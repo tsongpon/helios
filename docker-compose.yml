@@ -1,0 +1,8 @@
+services:
+  helios:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "1323:1323"
+    restart: unless-stopped
