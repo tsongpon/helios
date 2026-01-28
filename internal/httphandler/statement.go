@@ -16,10 +16,6 @@ func NewStatementHandler(pdfService PDFService) *StatementHandler {
 	}
 }
 
-type ErrorResponse struct {
-	Error string `json:"error"`
-}
-
 func (h *StatementHandler) CreateStatement(c *echo.Context) error {
 	// Get the uploaded file
 	file, err := c.FormFile("file")
@@ -59,5 +55,5 @@ func (h *StatementHandler) CreateStatement(c *echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, statement)
+	return c.JSON(http.StatusOK, toStatementResponse(statement))
 }
