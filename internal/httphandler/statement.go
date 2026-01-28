@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v5"
-	"github.com/tsongpon/helios/internal/model"
 )
 
 type StatementHandler struct {
@@ -15,14 +14,6 @@ func NewStatementHandler(pdfService PDFService) *StatementHandler {
 	return &StatementHandler{
 		pdfService: pdfService,
 	}
-}
-
-type StatementResponse struct {
-	Transactions []model.Transaction `json:"transactions"`
-}
-
-type StatementTextResponse struct {
-	Text string `json:"text"`
 }
 
 type ErrorResponse struct {
@@ -60,15 +51,13 @@ func (h *StatementHandler) CreateStatement(c *echo.Context) error {
 	}
 	defer src.Close()
 
-	// Extract text from PDF and parse transactions
-	transactions, err := h.pdfService.ExtractText(c.Request().Context(), src, password)
+	// Extract text from PDF and parse statement
+	statement, err := h.pdfService.ExtractText(c.Request().Context(), src, password)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error: "failed to extract text from PDF: " + err.Error(),
 		})
 	}
 
-	return c.JSON(http.StatusOK, StatementResponse{
-		Transactions: transactions,
-	})
+	return c.JSON(http.StatusOK, statement)
 }

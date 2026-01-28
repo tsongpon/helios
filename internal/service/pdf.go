@@ -26,18 +26,18 @@ func NewPDFService(llmRepository LLMRepository) *PDFService {
 
 // ExtractText extracts text content from a PDF file using pdftotext
 // password is optional - pass empty string for non-protected PDFs
-func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password string) ([]model.Transaction, error) {
+func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password string) (model.Statement, error) {
 	// Create a temporary file to store the PDF
 	tmpFile, err := os.CreateTemp("", "pdf-*.pdf")
 	if err != nil {
-		return nil, err
+		return model.Statement{}, err
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	// Write the uploaded content to temp file
 	if _, err := io.Copy(tmpFile, file); err != nil {
-		return nil, err
+		return model.Statement{}, err
 	}
 	tmpFile.Close()
 
@@ -56,18 +56,18 @@ func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password s
 
 	if err := cmd.Run(); err != nil {
 		if stderr.Len() > 0 {
-			return nil, fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
+			return model.Statement{}, fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
 		}
-		return nil, err
+		return model.Statement{}, err
 	}
 
 	extractedText := strings.TrimSpace(stdout.String())
 
 	// Send extracted text to LLM repository for parsing
-	transactions, err := s.llmRepository.ParseStatement(extractedText)
+	statement, err := s.llmRepository.ParseStatement(extractedText)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse statement: %w", err)
+		return model.Statement{}, fmt.Errorf("failed to parse statement: %w", err)
 	}
 
-	return transactions, nil
+	return statement, nil
 }

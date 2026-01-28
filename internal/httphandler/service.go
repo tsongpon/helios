@@ -8,5 +8,5 @@ import (
 )
 
 type PDFService interface {
-	ExtractText(ctx context.Context, file io.Reader, password string) ([]model.Transaction, error)
+	ExtractText(ctx context.Context, file io.Reader, password string) (model.Statement, error)
 }
