@@ -47,3 +47,5 @@ statement.pdf
 # Temporary files
 tmp/
 temp/
+
+*.pdf

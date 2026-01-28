@@ -60,15 +60,15 @@ func (h *StatementHandler) CreateStatement(c *echo.Context) error {
 	}
 	defer src.Close()
 
-	// Extract text from PDF
-	text, err := h.pdfService.ExtractText(c.Request().Context(), src, password)
+	// Extract text from PDF and parse transactions
+	transactions, err := h.pdfService.ExtractText(c.Request().Context(), src, password)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error: "failed to extract text from PDF: " + err.Error(),
 		})
 	}
 
-	return c.JSON(http.StatusOK, StatementTextResponse{
-		Text: text,
+	return c.JSON(http.StatusOK, StatementResponse{
+		Transactions: transactions,
 	})
 }

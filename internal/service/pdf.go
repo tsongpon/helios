@@ -8,34 +8,36 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/tsongpon/helios/internal/model"
 )
 
-// PDFService handles PDF text extraction
+// PDFService handles PDF text extraction and parsing
 type PDFService struct {
-	llmReposiroty LLMRepository
+	llmRepository LLMRepository
 }
 
 // NewPDFService creates a new PDFService instance
 func NewPDFService(llmRepository LLMRepository) *PDFService {
 	return &PDFService{
-		llmReposiroty: llmRepository,
+		llmRepository: llmRepository,
 	}
 }
 
 // ExtractText extracts text content from a PDF file using pdftotext
 // password is optional - pass empty string for non-protected PDFs
-func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password string) (string, error) {
+func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password string) ([]model.Transaction, error) {
 	// Create a temporary file to store the PDF
 	tmpFile, err := os.CreateTemp("", "pdf-*.pdf")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	// Write the uploaded content to temp file
 	if _, err := io.Copy(tmpFile, file); err != nil {
-		return "", err
+		return nil, err
 	}
 	tmpFile.Close()
 
@@ -54,10 +56,18 @@ func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password s
 
 	if err := cmd.Run(); err != nil {
 		if stderr.Len() > 0 {
-			return "", fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
+			return nil, fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
 		}
-		return "", err
+		return nil, err
 	}
 
-	return strings.TrimSpace(stdout.String()), nil
+	extractedText := strings.TrimSpace(stdout.String())
+
+	// Send extracted text to LLM repository for parsing
+	transactions, err := s.llmRepository.ParseStatement(extractedText)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse statement: %w", err)
+	}
+
+	return transactions, nil
 }
