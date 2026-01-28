@@ -14,13 +14,15 @@ import (
 
 // PDFService handles PDF text extraction and parsing
 type PDFService struct {
-	llmRepository LLMRepository
+	llmRepository       LLMRepository
+	statementRepository StatementRepository
 }
 
 // NewPDFService creates a new PDFService instance
-func NewPDFService(llmRepository LLMRepository) *PDFService {
+func NewPDFService(llmRepository LLMRepository, statementRepository StatementRepository) *PDFService {
 	return &PDFService{
-		llmRepository: llmRepository,
+		llmRepository:       llmRepository,
+		statementRepository: statementRepository,
 	}
 }
 
@@ -67,6 +69,10 @@ func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password s
 	statement, err := s.llmRepository.ParseStatement(extractedText)
 	if err != nil {
 		return model.Statement{}, fmt.Errorf("failed to parse statement: %w", err)
+	}
+
+	if err := s.statementRepository.Save(statement); err != nil {
+		return model.Statement{}, fmt.Errorf("failed to save statement: %w", err)
 	}
 
 	return statement, nil

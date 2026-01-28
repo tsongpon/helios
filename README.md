@@ -16,6 +16,7 @@ A PDF statement parsing service that extracts text from PDF bank statements and 
 - Go 1.25.1 or higher
 - Poppler utilities (pdftotext) with Thai language support
 - Google Gemini API key
+- GCP project with Firestore enabled
 - Docker & Docker Compose (optional)
 
 ## Installation
@@ -42,7 +43,10 @@ docker-compose up --build
 
 # Or build manually
 docker build -t helios .
-docker run -p 1323:1323 -e GEMINI_API_KEY=your_api_key helios
+docker run -p 1323:1323 \
+  -e GEMINI_API_KEY=your_api_key \
+  -e GCP_PROJECT_ID=your_gcp_project_id \
+  helios
 ```
 
 ## Configuration
@@ -52,6 +56,7 @@ docker run -p 1323:1323 -e GEMINI_API_KEY=your_api_key helios
 | Variable | Required | Description |
 |----------|----------|-------------|
 | GEMINI_API_KEY | Yes | Google Gemini API key for LLM parsing |
+| GCP_PROJECT_ID | Yes | GCP project ID for Firestore |
 
 ### Getting a Gemini API Key
 
@@ -60,13 +65,38 @@ docker run -p 1323:1323 -e GEMINI_API_KEY=your_api_key helios
 3. Click "Create API Key"
 4. Copy the generated API key
 
+### Setting Up Firestore
+
+1. Create or select a GCP project in the [Google Cloud Console](https://console.cloud.google.com)
+2. Enable the Firestore API for your project
+3. Create a Firestore database (Native mode)
+4. Set up authentication using one of:
+   - **Local development**: Run `gcloud auth application-default login`
+   - **GCE / Cloud Run**: The default service account is used automatically
+   - **Service account key**: Set the `GOOGLE_APPLICATION_CREDENTIALS` env var to the path of your JSON key file
+
+### Using a .env File
+
+The application supports loading environment variables from a `.env` file in the project root. Create a `.env` file:
+
+```
+GEMINI_API_KEY=your_api_key
+GCP_PROJECT_ID=your_gcp_project_id
+```
+
+The `.env` file is already in `.gitignore` to prevent committing secrets. If no `.env` file is present, environment variables are read from the shell as usual.
+
 ## Usage
 
 Start the server:
 
 ```bash
-# Local - set the API key and run
+# Local - with .env file
+./helios
+
+# Local - with explicit env vars
 export GEMINI_API_KEY=your_api_key
+export GCP_PROJECT_ID=your_gcp_project_id
 ./helios
 
 # Docker
@@ -101,18 +131,27 @@ Content-Type: multipart/form-data
 **Response:**
 ```json
 {
+  "card_number": "1234-56XX-XXXX-7890",
+  "total_payment": 15000.00,
+  "minimum_payment": 1500.00,
+  "payment_due_date": "2024-02-06",
+  "credit_line": 100000.00,
   "transactions": [
     {
       "transaction_date": "2024-01-15",
       "posting_date": "2024-01-15",
       "description": "TRANSFER TO SAVINGS",
-      "amount": -500.00
+      "amount": -500.00,
+      "is_installment": false,
+      "installment_term": ""
     },
     {
       "transaction_date": "2024-01-16",
       "posting_date": "2024-01-16",
       "description": "SALARY DEPOSIT",
-      "amount": 3000.00
+      "amount": 3000.00,
+      "is_installment": false,
+      "installment_term": ""
     }
   ]
 }
@@ -151,3 +190,4 @@ helios/
 - **Echo v5** - Web framework
 - **pdftotext** (Poppler) - PDF text extraction
 - **Google Gemini API** - LLM for transaction parsing
+- **Google Cloud Firestore** - Statement data persistence
