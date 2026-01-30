@@ -1,15 +1,8 @@
 package model
 
-type Statement struct {
-	CardNumber     string
-	TotalPayment   float64
-	MinimumPayment float64
-	PaymentDueDate string
-	CreditLine     float64
-	Transactions   []Transaction
-}
-
 type Transaction struct {
+	UserID          string
+	CardNumber      string
 	TransactionDate string
 	PostingDate     string
 	Description     string

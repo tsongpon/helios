@@ -47,13 +47,17 @@ func (h *StatementHandler) CreateStatement(c *echo.Context) error {
 	}
 	defer src.Close()
 
-	// Extract text from PDF and parse statement
-	statement, err := h.pdfService.ExtractText(c.Request().Context(), src, password)
+	// Fix userID for now
+	// TODO: Implement user authentication and authorization
+	userID := "1234567890"
+
+	// Extract text from PDF and parse transactions
+	transactions, err := h.pdfService.ExtractText(c.Request().Context(), userID, src, password)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error: "failed to extract text from PDF: " + err.Error(),
 		})
 	}
 
-	return c.JSON(http.StatusOK, toStatementResponse(statement))
+	return c.JSON(http.StatusOK, toTransactionResponses(transactions))
 }

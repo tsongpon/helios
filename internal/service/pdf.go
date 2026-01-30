@@ -14,32 +14,32 @@ import (
 
 // PDFService handles PDF text extraction and parsing
 type PDFService struct {
-	llmRepository       LLMRepository
-	statementRepository StatementRepository
+	llmRepository         LLMRepository
+	transactionRepository TransactionRepository
 }
 
 // NewPDFService creates a new PDFService instance
-func NewPDFService(llmRepository LLMRepository, statementRepository StatementRepository) *PDFService {
+func NewPDFService(llmRepository LLMRepository, transactionRepository TransactionRepository) *PDFService {
 	return &PDFService{
-		llmRepository:       llmRepository,
-		statementRepository: statementRepository,
+		llmRepository:         llmRepository,
+		transactionRepository: transactionRepository,
 	}
 }
 
 // ExtractText extracts text content from a PDF file using pdftotext
 // password is optional - pass empty string for non-protected PDFs
-func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password string) (model.Statement, error) {
+func (s *PDFService) ExtractText(ctx context.Context, userID string, file io.Reader, password string) ([]model.Transaction, error) {
 	// Create a temporary file to store the PDF
 	tmpFile, err := os.CreateTemp("", "pdf-*.pdf")
 	if err != nil {
-		return model.Statement{}, err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	// Write the uploaded content to temp file
 	if _, err := io.Copy(tmpFile, file); err != nil {
-		return model.Statement{}, err
+		return nil, err
 	}
 	tmpFile.Close()
 
@@ -58,22 +58,25 @@ func (s *PDFService) ExtractText(ctx context.Context, file io.Reader, password s
 
 	if err := cmd.Run(); err != nil {
 		if stderr.Len() > 0 {
-			return model.Statement{}, fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
+			return nil, fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
 		}
-		return model.Statement{}, err
+		return nil, err
 	}
 
 	extractedText := strings.TrimSpace(stdout.String())
 
 	// Send extracted text to LLM repository for parsing
-	statement, err := s.llmRepository.ParseStatement(extractedText)
+	transactions, err := s.llmRepository.ParseStatement(extractedText)
 	if err != nil {
-		return model.Statement{}, fmt.Errorf("failed to parse statement: %w", err)
+		return nil, fmt.Errorf("failed to parse statement: %w", err)
+	}
+	for i := range transactions {
+		transactions[i].UserID = userID
 	}
 
-	if err := s.statementRepository.Save(statement); err != nil {
-		return model.Statement{}, fmt.Errorf("failed to save statement: %w", err)
+	if err := s.transactionRepository.Save(ctx, transactions); err != nil {
+		return nil, fmt.Errorf("failed to save transactions: %w", err)
 	}
 
-	return statement, nil
+	return transactions, nil
 }

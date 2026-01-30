@@ -2,16 +2,9 @@ package httphandler
 
 import "github.com/tsongpon/helios/internal/model"
 
-type StatementResponse struct {
-	CardNumber     string                `json:"card_number"`
-	TotalPayment   float64               `json:"total_payment"`
-	MinimumPayment float64               `json:"minimum_payment"`
-	PaymentDueDate string                `json:"payment_due_date"`
-	CreditLine     float64               `json:"credit_line"`
-	Transactions   []TransactionResponse `json:"transactions"`
-}
-
 type TransactionResponse struct {
+	CardNumber      string  `json:"card_number"`
+	UserID          string  `json:"user_id"`
 	TransactionDate string  `json:"transaction_date"`
 	PostingDate     string  `json:"posting_date"`
 	Description     string  `json:"description"`
@@ -24,10 +17,12 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func toStatementResponse(s model.Statement) StatementResponse {
-	transactions := make([]TransactionResponse, len(s.Transactions))
-	for i, t := range s.Transactions {
-		transactions[i] = TransactionResponse{
+func toTransactionResponses(transactions []model.Transaction) []TransactionResponse {
+	responses := make([]TransactionResponse, len(transactions))
+	for i, t := range transactions {
+		responses[i] = TransactionResponse{
+			CardNumber:      t.CardNumber,
+			UserID:          t.UserID,
 			TransactionDate: t.TransactionDate,
 			PostingDate:     t.PostingDate,
 			Description:     t.Description,
@@ -36,12 +31,5 @@ func toStatementResponse(s model.Statement) StatementResponse {
 			InstallmentTerm: t.InstallmentTerm,
 		}
 	}
-	return StatementResponse{
-		CardNumber:     s.CardNumber,
-		TotalPayment:   s.TotalPayment,
-		MinimumPayment: s.MinimumPayment,
-		PaymentDueDate: s.PaymentDueDate,
-		CreditLine:     s.CreditLine,
-		Transactions:   transactions,
-	}
+	return responses
 }

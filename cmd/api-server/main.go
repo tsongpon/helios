@@ -28,18 +28,21 @@ func main() {
 
 	llmAPIKey := os.Getenv("GEMINI_API_KEY")
 	llmRepository := repository.NewGeminiLLMRepository(llmAPIKey)
-	statementRepository := repository.NewFirestoreStatementRepository(firestoreClient)
+	transactionRepository := repository.NewFirestoreTransactionRepository(firestoreClient)
 
-	pdfService := service.NewPDFService(llmRepository, statementRepository)
+	pdfService := service.NewPDFService(llmRepository, transactionRepository)
+	transactionService := service.NewTransactionService(transactionRepository)
 
 	pingHandler := httphandler.NewPingHandler()
 	statementHandler := httphandler.NewStatementHandler(pdfService)
+	transactionHandler := httphandler.NewTransactionHandler(transactionService)
 
 	e := echo.New()
 	e.Use(middleware.RequestLogger())
 
 	e.GET("/ping", pingHandler.Ping)
 	e.POST("/statements", statementHandler.CreateStatement)
+	e.GET("/transactions", transactionHandler.GetTransactions)
 
 	if err := e.Start(":1323"); err != nil {
 		e.Logger.Error("failed to start server", "error", err)

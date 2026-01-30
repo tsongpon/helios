@@ -46,19 +46,15 @@ type geminiResponse struct {
 	} `json:"candidates"`
 }
 
-func (r *GeminiLLMRepository) ParseStatement(statementText string) (model.Statement, error) {
-	prompt := fmt.Sprintf(`Parse the following bank statement text and extract statement information and all transactions.
+func (r *GeminiLLMRepository) ParseStatement(statementText string) ([]model.Transaction, error) {
+	prompt := fmt.Sprintf(`Parse the following bank statement text and extract all transactions.
 
-First, output the statement header information in the following format on the FIRST line:
-HEADER|card_number|total_payment|minimum_payment|payment_due_date|credit_line
+First, output the card number on the FIRST line in the following format:
+CARD|card_number
 
-Rules for header:
+Rules for card number:
 - card_number: The credit card number (may be partially masked, e.g., "1234-56XX-XXXX-7890")
-- total_payment: Total payment amount as a number
-- minimum_payment: Minimum payment amount as a number
-- payment_due_date: Payment due date in format YYYY-MM-DD
-- credit_line: Credit line/limit as a number
-- If any field is not found, use empty string for text fields and 0 for numeric fields
+- If card number is not found, use empty string
 
 Then, output each transaction on a separate line in pipe-delimited format:
 transaction_date|posting_date|description|amount|is_installment|installment_term
@@ -89,7 +85,7 @@ Determining the year for transactions:
 - If transaction month is greater than payment month, the transaction year is the previous year
 - Example: Payment date is 06/02/25, transaction date 17/12 means 2024-12-17; transaction date 05/01 means 2025-01-05
 
-Output ONLY the HEADER line followed by the pipe-delimited transaction lines, no other headers or extra text.
+Output ONLY the CARD line followed by the pipe-delimited transaction lines, no other headers or extra text.
 
 Bank Statement Text:
 %s`, statementText)
@@ -106,7 +102,7 @@ Bank Statement Text:
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
-		return model.Statement{}, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", r.apiKey)
@@ -116,36 +112,37 @@ Bank Statement Text:
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
-		return model.Statement{}, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return model.Statement{}, fmt.Errorf("failed to send request to Gemini API: %w", err)
+		return nil, fmt.Errorf("failed to send request to Gemini API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return model.Statement{}, fmt.Errorf("Gemini API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("Gemini API returned status %d", resp.StatusCode)
 	}
 
 	var geminiResp geminiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
-		return model.Statement{}, fmt.Errorf("failed to decode Gemini response: %w", err)
+		return nil, fmt.Errorf("failed to decode Gemini response: %w", err)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return model.Statement{}, fmt.Errorf("no response from Gemini API")
+		return nil, fmt.Errorf("no response from Gemini API")
 	}
 
 	responseText := geminiResp.Candidates[0].Content.Parts[0].Text
 	return parsePipeDelimitedResponse(responseText)
 }
 
-func parsePipeDelimitedResponse(text string) (model.Statement, error) {
-	var statement model.Statement
+func parsePipeDelimitedResponse(text string) ([]model.Transaction, error) {
+	var transactions []model.Transaction
+	var cardNumber string
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 
 	for _, line := range lines {
@@ -156,19 +153,9 @@ func parsePipeDelimitedResponse(text string) (model.Statement, error) {
 
 		parts := strings.Split(line, "|")
 
-		// Parse header line
-		if len(parts) == 6 && strings.TrimSpace(parts[0]) == "HEADER" {
-			statement.CardNumber = strings.TrimSpace(parts[1])
-			if v, err := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64); err == nil {
-				statement.TotalPayment = v
-			}
-			if v, err := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64); err == nil {
-				statement.MinimumPayment = v
-			}
-			statement.PaymentDueDate = strings.TrimSpace(parts[4])
-			if v, err := strconv.ParseFloat(strings.TrimSpace(parts[5]), 64); err == nil {
-				statement.CreditLine = v
-			}
+		// Parse card number line
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) == "CARD" {
+			cardNumber = strings.TrimSpace(parts[1])
 			continue
 		}
 
@@ -186,6 +173,7 @@ func parsePipeDelimitedResponse(text string) (model.Statement, error) {
 		installmentTerm := strings.TrimSpace(parts[5])
 
 		transaction := model.Transaction{
+			CardNumber:      cardNumber,
 			TransactionDate: strings.TrimSpace(parts[0]),
 			PostingDate:     strings.TrimSpace(parts[1]),
 			Description:     strings.TrimSpace(parts[2]),
@@ -193,8 +181,8 @@ func parsePipeDelimitedResponse(text string) (model.Statement, error) {
 			IsInstallment:   isInstallment,
 			InstallmentTerm: installmentTerm,
 		}
-		statement.Transactions = append(statement.Transactions, transaction)
+		transactions = append(transactions, transaction)
 	}
 
-	return statement, nil
+	return transactions, nil
 }

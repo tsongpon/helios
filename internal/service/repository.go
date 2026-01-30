@@ -1,15 +1,17 @@
 package service
 
-import "github.com/tsongpon/helios/internal/model"
+import (
+	"context"
+	"time"
+
+	"github.com/tsongpon/helios/internal/model"
+)
 
 type LLMRepository interface {
-	ParseStatement(statementText string) (model.Statement, error)
-}
-
-type StatementRepository interface {
-	Save(statement model.Statement) error
+	ParseStatement(statementText string) ([]model.Transaction, error)
 }
 
 type TransactionRepository interface {
-	Save(transaction []model.Transaction) error
+	Save(ctx context.Context, transactions []model.Transaction) error
+	GetTransactions(ctx context.Context, userID string, from, to time.Time) ([]model.Transaction, error)
 }
