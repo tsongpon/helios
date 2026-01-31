@@ -1,6 +1,7 @@
 package model
 
 type Transaction struct {
+	ID              string
 	UserID          string
 	CardNumber      string
 	TransactionDate string
